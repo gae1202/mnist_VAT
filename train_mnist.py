@@ -11,6 +11,19 @@ tf.app.flags.DEFINE_integer('num_steps', 1000, "the number of epochs for trainin
 tf.app.flags.DEFINE_float('learning_rate', 0.001, "initial leanring rate")
 
 
+def logsoftmax(x):
+    xdev = x - tf.reduce_max(x, 1, keep_dims=True)
+    lsm = xdev - tf.log(tf.reduce_sum(tf.exp(xdev), 1, keep_dims=True))
+    return lsm
+
+
+def kl_divergence_with_logit(q_logit, p_logit):
+    q = tf.nn.softmax(q_logit)
+    qlogq = tf.reduce_mean(tf.reduce_sum(q * logsoftmax(q_logit), 1))
+    qlogp = tf.reduce_mean(tf.reduce_sum(q * logsoftmax(p_logit), 1))
+    return qlogq - qlogp
+
+
 def inference(x):
     layer_sizes = np.asarray(FLAGS.layer_sizes.split('-'), np.int32)
     num_layers = len(layer_sizes) - 1
@@ -33,9 +46,27 @@ def inference(x):
     return h
 
 
-def loss_op(logits, t):
+def loss_op(logits, t, use_vat=True):
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, t)
     return tf.reduce_mean(cross_entropy)
+
+
+def vat_loss_op(xs, ys, eps=1, xi=10, ip=1):
+    def get_unit_vectors(vectors):
+        return tf.contrib.layers.unit_norm(vectors, dim=1)
+
+    d_list = tf.random_normal(tf.shape(xs))
+    for _ in xrange(ip):
+        new_inputs = xs + get_unit_vectors(d_list) * xi
+        new_outputs = inference(new_inputs)
+        klds = kl_divergence_with_logit(ys, new_outputs)
+        d_list = tf.stop_gradient(tf.gradients(klds, d_list)[0])
+
+    new_inputs = xs + get_unit_vectors(d_list) * eps
+    logit_ys = tf.stop_gradient(ys)
+    y_perturbations = inference(new_inputs)
+    lds = kl_divergence_with_logit(logit_ys, y_perturbations)
+    return tf.reduce_mean(lds)
 
 
 def accuracy_op(y, t):
@@ -59,6 +90,8 @@ def main(_):
         t = tf.placeholder(tf.float32, [None, layer_sizes[-1]])
         logits = inference(x)
         _loss = loss_op(logits, t)
+        tf.get_variable_scope().reuse_variables()
+        _loss += vat_loss_op(x, logits)
         _accuracy = accuracy_op(logits, t)
         train_op = training(_loss)
 
