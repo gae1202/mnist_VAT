@@ -48,9 +48,10 @@ def training(loss):
     train_op = optimizer.minimize(loss)
     return train_op
 
+
 def main(_):
     rng = np.random.RandomState(FLAGS.seed)
-    mnist = input_data.read_data_sets("data/", one_hot=True)
+    mnist = input_data.read_data_sets("./data/", one_hot=True)
     graph = tf.Graph()
     with graph.as_default():
         layer_sizes = np.asarray(FLAGS.layer_sizes.split('-'), np.int32)
@@ -63,7 +64,7 @@ def main(_):
 
     with tf.Session(graph=graph) as sess:
         tf.initialize_all_variables().run()
-        for i in  xrange(FLAGS.num_steps):
+        for i in xrange(FLAGS.num_steps):
             batch_xs, batch_ts = mnist.train.next_batch(FLAGS.batch_size)
             feed_dict = {
                 x: batch_xs,
@@ -72,7 +73,7 @@ def main(_):
             loss, accuracy, _ = sess.run([_loss, _accuracy, train_op], feed_dict=feed_dict)
             step = i + 1
             if (step % 100 == 0) or step == FLAGS.num_steps:
-                print("[Step {0}]  loss:{1}, accuracy:{2}".format(step, loss, accuracy))
+                print("[Step %06d]  loss:%.3f, accuracy:%.3f" % (step, loss, accuracy))
 
 if __name__ == "__main__":
     tf.app.run()
